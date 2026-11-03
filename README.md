@@ -79,7 +79,7 @@ You can customize sensitivity, thresholds, and behavior by editing `/etc/macbook
 [General]
 poll_interval = 1.0       # Seconds between sensor checks
 smoothing_factor = 0.25    # Lower = smoother transitions (0.05 to 0.5)
-max_expected_lux = 1000.0  # Max sensor range
+max_expected_lux = 1000.0  # Sensor value mapped to maximum brightness
 
 [Screen]
 min_screen_percent = 5     # Minimum display brightness (never black)
