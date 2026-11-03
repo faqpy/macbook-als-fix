@@ -1,0 +1,15 @@
+[Unit]
+Description=MacBook Ambient Light Sensor Auto-Brightness Daemon
+Documentation=https://github.com
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/macbook-als
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
