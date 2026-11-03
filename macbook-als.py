@@ -35,10 +35,18 @@ class HardwareDetector:
         # 2. Linux IIO subsystem (T2 / Apple Silicon / standard ACPI ALS)
         iio_devices = glob.glob("/sys/bus/iio/devices/iio:device*")
         for dev in iio_devices:
-            for node in ["in_illuminance_raw", "in_illuminance_input", "in_illuminance"]:
+            # Prefer the kernel-converted value. A *_raw value is an ADC
+            # reading and is not necessarily expressed in lux.
+            for node in ["in_illuminance_input", "in_illuminance", "in_illuminance_raw"]:
                 full_path = os.path.join(dev, node)
                 if os.path.exists(full_path):
-                    return {"type": "iio", "path": full_path}
+                    return {
+                        "type": "iio",
+                        "path": full_path,
+                        "raw": node.endswith("_raw"),
+                        "scale_path": os.path.join(dev, "in_illuminance_scale"),
+                        "offset_path": os.path.join(dev, "in_illuminance_offset"),
+                    }
 
         # 3. ACPI ALS
         acpi_als = glob.glob("/sys/bus/acpi/devices/ACPI0008:*/ali")
@@ -189,9 +197,26 @@ def read_sensor_lux(sensor_info):
             parts = [float(p) for p in cleaned.split(",") if p]
             return sum(parts) / len(parts) if parts else 0.0
 
-        return float(content)
+        value = float(content)
+        if sensor_info.get("raw"):
+            scale = read_iio_attribute(sensor_info.get("scale_path"), 1.0)
+            offset = read_iio_attribute(sensor_info.get("offset_path"), 0.0)
+            value = (value + offset) * scale
+        return value if math.isfinite(value) else 0.0
     except Exception:
         return 0.0
+
+
+def read_iio_attribute(path, default):
+    """Reads an optional IIO scale or offset attribute."""
+    if not path or not os.path.isfile(path):
+        return default
+    try:
+        with open(path, "r") as f:
+            value = float(f.read().strip())
+        return value if math.isfinite(value) else default
+    except (OSError, ValueError):
+        return default
 
 
 def load_config():
@@ -237,9 +262,14 @@ def load_config():
 
 
 def calculate_screen_brightness(lux, settings, max_hardware):
-    """Maps lux logarithmically (human eye perception curve) to hardware brightness."""
+    """Maps the calibrated ALS range to hardware brightness."""
+    if max_hardware <= 0:
+        return 0
     clamped_lux = max(0.0, min(lux, settings["max_expected_lux"]))
-    ratio = math.log10(clamped_lux + 1.0) / math.log10(settings["max_expected_lux"] + 1.0)
+    max_lux = settings["max_expected_lux"]
+    if max_lux <= 0:
+        return 0
+    ratio = clamped_lux / max_lux
 
     min_pct = settings["min_screen_percent"] / 100.0
     max_pct = settings["max_screen_percent"] / 100.0
